@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -42,11 +43,27 @@ func (s *Server) acceptConn() {
 			fmt.Printf("Error accept: %s\n", err)
 			continue
 		}
-
+		fmt.Printf("New connection from %s\n", conn.RemoteAddr())
 		go s.handleConnection(conn)
 	}
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
-	fmt.Printf("New connection from %s\n", conn.RemoteAddr())
+	defer conn.Close()
+
+	buf := make([]byte, 2048)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("Client %s disconnected\n", conn.RemoteAddr().String())
+				return
+			}
+			fmt.Printf("error reading: %s\n", err)
+			continue
+		}
+
+		msg := buf[:n]
+		fmt.Printf("Recieved msg: %s\n", msg)
+	}
 }
