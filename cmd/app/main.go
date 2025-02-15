@@ -1,7 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/shimupan/TCP-Chat-Room/pkg/server"
+)
 
 func main() {
-	fmt.Printf("Hello World!\n")
+	server := server.NewServer(":1337")
+	err := server.Start()
+	if err != nil {
+		fmt.Printf("Err in server: %s\n", err)
+	}
+
+	return
 }
