@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 )
 
 func main() {
@@ -30,4 +31,6 @@ func main() {
 	}
 
 	fmt.Printf("Wrote %d bytes to server!\n", n)
+	buf := make([]byte, 2048)
+	_, _ = os.Stdin.Read(buf)
 }
