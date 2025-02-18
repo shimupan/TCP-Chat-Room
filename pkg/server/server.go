@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shimupan/TCP-Chat-Room/pkg/client"
 )
@@ -34,9 +35,10 @@ func (s *Server) Start() error {
 	}
 	defer listener.Close()
 	s.listener = listener
-	fmt.Printf("Server started listening on: %s\n", s.listener.Addr().String())
+	s.logf("Server started listening on: %s\n", s.listener.Addr().String())
 
 	go s.acceptConn()
+	time.Sleep(1 * time.Millisecond)
 	go s.handleCommands()
 
 	<-s.quitch
@@ -45,20 +47,20 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) acceptConn() {
-	fmt.Printf("Server accepting connections\n")
+	s.logf("Server accepting connections\n")
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
 			select {
 			case <-s.quitch:
-				fmt.Printf("Server gracefully shut down, closing accept loop...\n")
+				s.logf("Server gracefully shut down, closing accept loop...\n")
 				return
 			default:
-				fmt.Printf("Error accept: %s\n", err)
+				s.logf("Error accept: %s\n", err)
 				continue
 			}
 		}
-		fmt.Printf("New connection from %s\n", conn.RemoteAddr())
+		s.logf("New connection from %s\n", conn.RemoteAddr())
 		go s.handleConnection(conn)
 	}
 }
@@ -69,7 +71,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	buf := make([]byte, 2048)
 	n, err := conn.Read(buf)
 	if err != nil {
-		fmt.Printf("Error reading username: %s\n", err)
+		s.logf("Error reading username: %s\n", err)
 		conn.Write([]byte("Error reading username, terminating session\n"))
 		return
 	}
@@ -81,7 +83,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	s.mx.RUnlock()
 
 	conn.Write([]byte(fmt.Sprintf("Welcome %s!\n", buf[:n])))
-	fmt.Printf("Client %s has logged in as %s!\n", conn.RemoteAddr().String(), username)
+	s.logf("Client %s has logged in as %s!\n", conn.RemoteAddr().String(), username)
 
 	client.HandleCommands()
 }
@@ -89,17 +91,65 @@ func (s *Server) handleConnection(conn net.Conn) {
 func (s *Server) handleCommands() {
 	buf := make([]byte, 100)
 	for {
+		time.Sleep(5 * time.Millisecond)
 		n, err := os.Stdin.Read(buf)
 		if err != nil {
-			fmt.Printf("Error reading from stdin: %s\n", err)
+			s.logf("Error reading from stdin: %s\n", err)
 			continue
 		}
-		command := strings.TrimSpace(string(buf[:n]))
-		switch command {
+		command := strings.Split(strings.TrimSpace(string(buf[:n])), " ")
+		switch command[0] {
 		case "stop":
-			fmt.Printf("Server recieved stop command, gracefully shutting down...\n")
-			close(s.quitch)
+			s.stop()
 			return
+		case "list":
+			s.listUsers()
+		case "kick":
+			s.kickUser(command[1])
 		}
 	}
+}
+
+func (s *Server) stop() {
+	s.logf("Server recieved stop command, gracefully shutting down...\n")
+	close(s.quitch)
+}
+
+func (s *Server) listUsers() {
+	if len(s.connections) == 0 {
+		s.logf("There are no logged in clients currently...\n")
+		return
+	}
+	cnt := 1
+	for client := range s.connections {
+		s.logf("%d) %s\n", cnt, client.ToString())
+		cnt += 1
+	}
+}
+
+func (s *Server) kickUser(clientName string) {
+	if len(s.connections) == 0 {
+		s.logf("There are no logged in clients currently...\n")
+		return
+	}
+
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
+	// Find and remove matching clients
+	for client := range s.connections {
+		if client.Username == clientName {
+			err := client.Conn.Close()
+			if err != nil {
+				s.logf("Error kicking %s\n", client.ToString())
+				continue
+			}
+			delete(s.connections, client)
+			s.logf("Successfully kicked %s off the server\n", client.ToString())
+		}
+	}
+}
+
+func (s *Server) logf(format string, args ...interface{}) {
+	fmt.Printf("\r"+format+"> ", args...)
 }
