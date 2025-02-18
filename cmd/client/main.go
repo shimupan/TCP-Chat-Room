@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"time"
 )
 
 func main() {
@@ -30,20 +29,15 @@ func main() {
 
 func listener(conn net.Conn, clientch chan struct{}) {
 	buf := make([]byte, 2048)
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) // set up non blocking read
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			if os.IsTimeout(err) { // Read timed out, check if writer exited
-				select {
-				case <-clientch:
-					fmt.Println("Writer exited, closing listener.")
-					return
-				default:
-					continue // Keep listening
-				}
+			if err == io.EOF {
+				fmt.Printf("Listener: Server closed connection...\n")
+				close(clientch)
+				return
 			}
-			fmt.Printf("Error reading from server: %s\n", err)
+			fmt.Printf("Listener: Error reading from server: %s\n", err)
 			continue
 		}
 		msg := string(buf[:n])
@@ -54,21 +48,24 @@ func listener(conn net.Conn, clientch chan struct{}) {
 func writer(conn net.Conn, clientch chan struct{}) {
 	buf := make([]byte, 2048)
 	for {
+		// Read command from stdin
 		n, err := os.Stdin.Read(buf)
 		if err != nil {
 			if err == io.EOF {
-				close(clientch)
+				fmt.Printf("Writer: Server closed connection...: %s\n", err)
 				return
 			}
-			fmt.Printf("Error writing: %s\n", err)
-			continue
+			fmt.Printf("Writer: Error reading from stdin: %s\n", err)
+			return
 		}
 
+		// Write command to server
 		command := strings.TrimRight(string(buf[:n]), "\n")
 		_, err = conn.Write([]byte(command))
 		if err != nil {
-			fmt.Printf("Error writing to server: %s\n", err)
-			continue
+			fmt.Printf("Writer: Error writing to server, connection might be closed: %s\n", err)
+			close(clientch)
+			return
 		}
 		fmt.Printf("Successfully wrote %s to server!\n", command)
 	}
