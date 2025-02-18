@@ -67,6 +67,5 @@ func writer(conn net.Conn, clientch chan struct{}) {
 			close(clientch)
 			return
 		}
-		fmt.Printf("Successfully wrote %s to server!\n", command)
 	}
 }
