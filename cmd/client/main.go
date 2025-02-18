@@ -6,23 +6,25 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"github.com/shimupan/TCP-Chat-Room/pkg/helper"
 )
 
 func main() {
 	conn, err := net.Dial("tcp", ":1337")
 	if err != nil {
-		fmt.Printf("Error connecting to server: %s\n", err)
+		helper.Logf("Error connecting to server: %s\n", err)
 		return
 	}
 	defer conn.Close()
-	fmt.Printf("Successfully connected to server!\n")
+	helper.Logf("Successfully connected to server!\n")
 
 	clientch := make(chan struct{})
 
 	go listener(conn, clientch)
-	fmt.Printf("Successfully setup listener!\n")
+	helper.Logf("Successfully setup listener!\n")
 	go writer(conn, clientch)
-	fmt.Printf("Successfully setup writer!\n")
+	helper.Logf("Successfully setup writer!\n")
 
 	<-clientch
 }
@@ -33,39 +35,53 @@ func listener(conn net.Conn, clientch chan struct{}) {
 		n, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("Listener: Server closed connection...\n")
+				helper.Logf("Listener: Server closed connection...\n")
 				close(clientch)
 				return
 			}
-			fmt.Printf("Listener: Error reading from server: %s\n", err)
+			helper.Logf("Listener: Error reading from server: %s\n", err)
 			continue
 		}
 		msg := string(buf[:n])
-		fmt.Printf("Server: %s", msg)
+		helper.Logf("Server: %s", msg)
 	}
 }
 
 func writer(conn net.Conn, clientch chan struct{}) {
 	buf := make([]byte, 2048)
+	i := 0
 	for {
+		// Only show prompt for commands
+		fmt.Printf("> ")
+
 		// Read command from stdin
 		n, err := os.Stdin.Read(buf)
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("Writer: Server closed connection...: %s\n", err)
+				helper.Logf("Writer: Server closed connection...: %s\n", err)
 				return
 			}
-			fmt.Printf("Writer: Error reading from stdin: %s\n", err)
+			helper.Logf("Writer: Error reading from stdin: %s\n", err)
 			return
 		}
 
-		// Write command to server
+		// Clear the prompt line
+		if i != 0 {
+			fmt.Print("\033[1A\033[K") // Move up one line and clear it
+		}
+
 		command := strings.TrimRight(string(buf[:n]), "\n")
+
+		if strings.HasPrefix(command, "-") {
+			helper.Logf("> %s\n", command)
+		}
+
 		_, err = conn.Write([]byte(command))
 		if err != nil {
-			fmt.Printf("Writer: Error writing to server, connection might be closed: %s\n", err)
+			helper.Logf("Writer: Error writing to server, connection might be closed: %s\n", err)
 			close(clientch)
 			return
 		}
+		i += 1
 	}
 }

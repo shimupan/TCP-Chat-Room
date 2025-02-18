@@ -55,6 +55,8 @@ func (c *Client) HandleCommands(rooms map[string][]*Client, mx *sync.RWMutex) {
 			c.anyone(rooms)
 		case "-help":
 			c.Conn.Write([]byte(c.listCommands()))
+		default:
+			c.handleMessage(strings.Join(msg, " "), rooms)
 		}
 		// helper.Logf("Recieved msg: %s\n", msg)
 	}
@@ -147,6 +149,22 @@ func (c *Client) anyone(rooms map[string][]*Client) {
 	response := fmt.Sprintf("Room %s members:\n%s\n", c.Room.RoomId, members)
 	c.Conn.Write([]byte(response))
 	helper.Logf("Client %s requested information about their room\n", c.ToString())
+}
+
+func (c *Client) handleMessage(msg string, rooms map[string][]*Client) {
+	if c.Room.RoomId == "" {
+		c.Conn.Write([]byte("You must be in a room before being able to chat, please type [-help] if you need help\n"))
+		helper.Logf("Client %s tried to message but wasn't in a room\n", c.ToString())
+		return
+	}
+
+	client_list := rooms[c.Room.RoomId]
+
+	for cli := range client_list {
+		client_list[cli].Conn.Write([]byte(fmt.Sprintf("%s: %s\n", c.Username, msg)))
+	}
+
+	helper.Logf("Client %s sent a message to room %s\n", c.ToString(), c.Room.RoomId)
 }
 
 // Helper function to check if the error is due to closed connection
