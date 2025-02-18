@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strings"
+	"time"
 )
 
 func main() {
@@ -13,24 +16,60 @@ func main() {
 		return
 	}
 	defer conn.Close()
-
 	fmt.Printf("Successfully connected to server!\n")
 
-	n, err := conn.Write([]byte("Hello Server!"))
-	if err != nil {
-		fmt.Printf("Error writing to server: %s\n", err)
-		return
-	}
+	clientch := make(chan struct{})
 
-	fmt.Printf("Wrote %d bytes to server!\n", n)
+	go listener(conn, clientch)
+	fmt.Printf("Successfully setup listener!\n")
+	go writer(conn, clientch)
+	fmt.Printf("Successfully setup writer!\n")
 
-	n, err = conn.Write([]byte(""))
-	if err != nil {
-		fmt.Printf("Error writing to server: %s\n", err)
-		return
-	}
+	<-clientch
+}
 
-	fmt.Printf("Wrote %d bytes to server!\n", n)
+func listener(conn net.Conn, clientch chan struct{}) {
 	buf := make([]byte, 2048)
-	_, _ = os.Stdin.Read(buf)
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) // set up non blocking read
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			if os.IsTimeout(err) { // Read timed out, check if writer exited
+				select {
+				case <-clientch:
+					fmt.Println("Writer exited, closing listener.")
+					return
+				default:
+					continue // Keep listening
+				}
+			}
+			fmt.Printf("Error reading from server: %s\n", err)
+			continue
+		}
+		msg := string(buf[:n])
+		fmt.Printf("Msg from server: %s", msg)
+	}
+}
+
+func writer(conn net.Conn, clientch chan struct{}) {
+	buf := make([]byte, 2048)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				close(clientch)
+				return
+			}
+			fmt.Printf("Error writing: %s\n", err)
+			continue
+		}
+
+		command := strings.TrimRight(string(buf[:n]), "\n")
+		_, err = conn.Write([]byte(command))
+		if err != nil {
+			fmt.Printf("Error writing to server: %s\n", err)
+			continue
+		}
+		fmt.Printf("Successfully wrote %s to server!\n", command)
+	}
 }
