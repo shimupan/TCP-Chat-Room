@@ -47,6 +47,8 @@ func (c *Client) HandleCommands(rooms map[string][]*Client, mx *sync.RWMutex) {
 			c.createRoom(msg[1], rooms, mx)
 		case "-delete":
 			c.deleteRoom(msg[1], rooms, mx)
+		case "-join":
+			c.joinRoom(msg[1], rooms, mx)
 		case "-leave":
 			c.leaveRoom(c.Room.RoomId, rooms, mx)
 		case "-me":
@@ -72,6 +74,9 @@ func (c *Client) createRoom(joining string, rooms map[string][]*Client, mx *sync
 	// Create new room if not exists
 	if _, exists := rooms[joining]; !exists {
 		rooms[joining] = make([]*Client, 0)
+	} else {
+		c.Conn.Write([]byte(fmt.Sprintf("Room %s already exist, please use -join <room> to join it\n", c.Room.RoomId)))
+		return
 	}
 
 	// Add client to room
@@ -100,6 +105,28 @@ func (c *Client) deleteRoom(deleting string, rooms map[string][]*Client, mx *syn
 	}
 	delete(rooms, deleting)
 	helper.Logf("Client %s deleted and removed everyone from room %s\n", c.ToString(), deleting)
+}
+
+func (c *Client) joinRoom(joining string, rooms map[string][]*Client, mx *sync.RWMutex) {
+	if c.Room.RoomId != "" {
+		c.Conn.Write([]byte(fmt.Sprintf("You are already in a room: %s\n", c.Room.RoomId)))
+		return
+	}
+	if _, exists := rooms[joining]; !exists {
+		c.Conn.Write([]byte("This room does not exist, please create it if you want\n"))
+		return
+	}
+
+	c.JoinRoom(joining)
+
+	client_list := rooms[joining]
+	for cli := range client_list {
+		client_list[cli].Conn.Write([]byte(fmt.Sprintf("%s has joined the room!\n", c.Username)))
+	}
+
+	mx.Lock()
+	rooms[joining] = append(rooms[joining], c)
+	mx.Unlock()
 }
 
 func (c *Client) leaveRoom(leaving string, rooms map[string][]*Client, mx *sync.RWMutex) {
@@ -183,6 +210,7 @@ func (c *Client) listCommands() string {
 		{"Hey there!", "Try some of these commands!"},
 		{"-create <room>", "Create and join a new chat room"},
 		{"-delete <room>", "Delete a room (must be owner and in a room)"},
+		{"-join <room>", "Join a room (the room must already exist)"},
 		{"-leave", "Leave your current room"},
 		{"-me", "Show your current user information"},
 		{"-anyone", "List all members in your current room"},
@@ -200,6 +228,11 @@ func (c *Client) listCommands() string {
 
 func (c *Client) LeaveRoom() {
 	c.Room.RoomId = ""
+	c.Room.Owner = false
+}
+
+func (c *Client) JoinRoom(room string) {
+	c.Room.RoomId = room
 	c.Room.Owner = false
 }
 
