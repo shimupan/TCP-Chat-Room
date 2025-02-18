@@ -5,20 +5,25 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/shimupan/TCP-Chat-Room/pkg/client"
 )
 
 type Server struct {
-	addr     string
-	listener net.Listener
-	quitch   chan struct{}
+	addr        string
+	listener    net.Listener
+	mx          sync.RWMutex
+	connections map[*client.Client]struct{}
+	quitch      chan struct{}
 }
 
 func NewServer(addr string) *Server {
 	return &Server{
-		addr:   addr,
-		quitch: make(chan struct{}),
+		addr:        addr,
+		mx:          sync.RWMutex{},
+		connections: make(map[*client.Client]struct{}),
+		quitch:      make(chan struct{}),
 	}
 }
 
@@ -44,8 +49,14 @@ func (s *Server) acceptConn() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			fmt.Printf("Error accept: %s\n", err)
-			continue
+			select {
+			case <-s.quitch:
+				fmt.Printf("Server gracefully shut down, closing accept loop...\n")
+				return
+			default:
+				fmt.Printf("Error accept: %s\n", err)
+				continue
+			}
 		}
 		fmt.Printf("New connection from %s\n", conn.RemoteAddr())
 		go s.handleConnection(conn)
@@ -64,6 +75,14 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 	username := string(buf[:n])
 	client := client.NewClient(username, conn)
+
+	s.mx.RLock()
+	s.connections[client] = struct{}{}
+	s.mx.RUnlock()
+
+	conn.Write([]byte(fmt.Sprintf("Welcome %s!\n", buf[:n])))
+	fmt.Printf("Client %s has logged in as %s!\n", conn.RemoteAddr().String(), username)
+
 	client.HandleCommands()
 }
 
