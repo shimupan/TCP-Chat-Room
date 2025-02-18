@@ -88,11 +88,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 	conn.Write([]byte(fmt.Sprintf("Welcome %s!\n", buf[:n])))
 	helper.Logf("Client %s has logged in as %s!\n", conn.RemoteAddr().String(), username)
 
-	client.HandleCommands(s.rooms, &s.mx)
+	client.HandleCommands(s.connections, s.rooms, &s.mx)
 }
 
 func (s *Server) handleCommands() {
 	buf := make([]byte, 100)
+	helper.Logf(s.listCommands())
 	for {
 		time.Sleep(5 * time.Millisecond)
 		n, err := os.Stdin.Read(buf)
@@ -102,15 +103,19 @@ func (s *Server) handleCommands() {
 		}
 		command := strings.Split(strings.TrimSpace(string(buf[:n])), " ")
 		switch command[0] {
-		case "stop":
+		case "-stop":
 			s.stop()
 			return
-		case "list-users":
+		case "-list-users":
 			s.listUsers()
-		case "list-rooms":
+		case "-list-rooms":
 			s.listRooms()
-		case "kick":
+		case "-kick":
 			s.kickUser(command[1])
+		case "-help":
+			helper.Logf(s.listCommands())
+		default:
+			helper.Logf("Unknow command, please type -help for help\n")
 		}
 	}
 }
@@ -168,8 +173,31 @@ func (s *Server) kickUser(clientName string) {
 				helper.Logf("Error kicking %s\n", client.ToString())
 				continue
 			}
+			client.LeaveRoom(client.Room.RoomId, s.rooms, &s.mx)
 			delete(s.connections, client)
 			helper.Logf("Successfully kicked %s off the server\n", client.ToString())
 		}
 	}
+}
+
+func (s *Server) listCommands() string {
+	commands := []struct {
+		cmd         string
+		description string
+	}{
+		{"-Hey there!", "Try some of these commands!"},
+		{"-stop", "Gracefully shutdown the server"},
+		{"-list-users", "List all the users currently connected to a room"},
+		{"-list-rooms", "List all the rooms and the users that are in it"},
+		{"-kick <username>", "Kicks ALL users who has the specified username (correctly handles room)"},
+		{"-help", "Show this help message"},
+	}
+
+	var helpText strings.Builder
+	helpText.WriteString("Available commands:\n")
+	for _, cmd := range commands {
+		helpText.WriteString(fmt.Sprintf("%-20s - %s\n", cmd.cmd, cmd.description))
+	}
+
+	return helpText.String()
 }

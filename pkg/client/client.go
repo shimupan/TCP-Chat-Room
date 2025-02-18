@@ -27,7 +27,7 @@ func NewClient(username string, conn net.Conn) *Client {
 	}
 }
 
-func (c *Client) HandleCommands(rooms map[string][]*Client, mx *sync.RWMutex) {
+func (c *Client) HandleCommands(connections map[*Client]struct{}, rooms map[string][]*Client, mx *sync.RWMutex) {
 	buf := make([]byte, 2048)
 	c.Conn.Write([]byte(c.listCommands()))
 	for {
@@ -50,11 +50,16 @@ func (c *Client) HandleCommands(rooms map[string][]*Client, mx *sync.RWMutex) {
 		case "-join":
 			c.joinRoom(msg[1], rooms, mx)
 		case "-leave":
-			c.leaveRoom(c.Room.RoomId, rooms, mx)
+			c.LeaveRoom(c.Room.RoomId, rooms, mx)
 		case "-me":
 			c.me()
 		case "-anyone":
 			c.anyone(rooms)
+		case "-quit":
+			c.Conn.Close()
+			c.LeaveRoom(c.Room.RoomId, rooms, mx)
+			delete(connections, c)
+			return
 		case "-help":
 			c.Conn.Write([]byte(c.listCommands()))
 		default:
@@ -101,7 +106,7 @@ func (c *Client) deleteRoom(deleting string, rooms map[string][]*Client, mx *syn
 	client_list := rooms[deleting]
 
 	for cli := range client_list {
-		client_list[cli].LeaveRoom()
+		client_list[cli].leaveRoom()
 	}
 	delete(rooms, deleting)
 	helper.Logf("Client %s deleted and removed everyone from room %s\n", c.ToString(), deleting)
@@ -129,7 +134,7 @@ func (c *Client) joinRoom(joining string, rooms map[string][]*Client, mx *sync.R
 	mx.Unlock()
 }
 
-func (c *Client) leaveRoom(leaving string, rooms map[string][]*Client, mx *sync.RWMutex) {
+func (c *Client) LeaveRoom(leaving string, rooms map[string][]*Client, mx *sync.RWMutex) {
 	if c.Room.RoomId == "" {
 		c.Conn.Write([]byte("You are currently not in a room\n"))
 		return
@@ -138,11 +143,10 @@ func (c *Client) leaveRoom(leaving string, rooms map[string][]*Client, mx *sync.
 	mx.Lock()
 	defer mx.Unlock()
 	client_list := rooms[leaving]
-	client_list[0].LeaveRoom()
-
 	if len(rooms[leaving]) == 1 {
-		delete(rooms, leaving)
+		client_list[0].leaveRoom()
 		rooms[leaving][0].Conn.Write([]byte(fmt.Sprintf("You have been left room %s\n", leaving)))
+		delete(rooms, leaving)
 		helper.Logf("Client %s left the room %s and it got deleted\n", c.ToString(), leaving)
 	} else {
 		rooms[leaving] = client_list[1:]
@@ -214,6 +218,7 @@ func (c *Client) listCommands() string {
 		{"-leave", "Leave your current room"},
 		{"-me", "Show your current user information"},
 		{"-anyone", "List all members in your current room"},
+		{"-close", "Closes connection with the server"},
 		{"-help", "Show this help message"},
 	}
 
@@ -226,7 +231,7 @@ func (c *Client) listCommands() string {
 	return helpText.String()
 }
 
-func (c *Client) LeaveRoom() {
+func (c *Client) leaveRoom() {
 	c.Room.RoomId = ""
 	c.Room.Owner = false
 }
