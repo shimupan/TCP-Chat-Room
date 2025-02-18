@@ -1,7 +1,6 @@
 ### Concurrent and Threadsafe TCP Chat Room Written in GO
 
-## Usuage
-
+### Usage
 # Server
 
 - Make sure you have ```go``` and ```Makefile``` installed and simple type
