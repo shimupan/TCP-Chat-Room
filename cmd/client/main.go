@@ -41,7 +41,7 @@ func listener(conn net.Conn, clientch chan struct{}) {
 			continue
 		}
 		msg := string(buf[:n])
-		fmt.Printf("Msg from server: %s", msg)
+		fmt.Printf("Server: %s", msg)
 	}
 }
 
